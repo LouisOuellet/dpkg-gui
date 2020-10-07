@@ -1,0 +1,308 @@
+#!/bin/bash
+#==============================================================================
+#TITLE:            dpkg-gui
+#DESCRIPTION:      This script makes it easy to connect to use dpkg using GUIs
+#AUTHOR:           Louis Ouellet
+#DATE:             2020-10-07
+#VERSION:          1.1-0
+
+#==============================================================================
+# CUSTOM SETTINGS
+#==============================================================================
+
+# Initialize Timer
+SECOND=0
+
+# Script name
+scriptname=$(echo $0 | sed -e 's@.*/@@')
+
+# Date
+DATE=$(date +"%Y-%m-%d %H:%M:%S")
+
+# Debug Switch
+DEBUG=false
+
+# Log Directory
+if [ "$0" = "./${scriptname}" ];then
+    LOGDIR=log/${scriptname}/
+else
+    LOGDIR=$HOME/log/${scriptname}/
+fi
+if [ ! -d $LOGDIR ];then
+    mkdir -p $LOGDIR
+fi
+
+# Log File
+LgFile="${LOGDIR}$(date +%s%N).log"
+
+# Install Directory && Binary
+INSTDIR=/usr/share/${scriptname}/
+INSTBIN=/usr/bin/${scriptname}
+
+# Script Personalisation
+Title=""
+help_options="
+-v                     => Enable Debug Mode
+                          Input commands sent are stored in ${LOGDIR}
+-i                     => Install Script as Binary
+-r                     => Remove Binary
+"
+help_functions="
+"
+#==============================================================================
+# BASH SETUP
+#==============================================================================
+
+# Set Bash
+set -o pipefail
+set -e
+
+# SETS LOCALE
+# Updated to en_US to support
+#export LC_ALL=en_US.UTF-8 > /dev/null 2>&1 || export LC_ALL=en_GB.UTF-8 > /dev/null 2>&1 || export LC_ALL=C.UTF-8 > /dev/null 2>&1
+
+#==============================================================================
+# FORMATTING
+#==============================================================================
+
+# COLORS
+blackText=$(tput setaf 0)   # Black
+redText=$(tput setaf 1)     # Red
+greenText=$(tput setaf 2)   # Green
+yellowText=$(tput setaf 3)  # Yellow
+blueText=$(tput setaf 4)    # Blue
+magentaText=$(tput setaf 5) # Magenta
+cyanText=$(tput setaf 6)    # Cyan
+whiteText=$(tput setaf 7)   # White
+resetText=$(tput sgr0)      # Reset to default color
+
+# STYLES
+boldText=$(tput bold)
+blinkingText=$(tput blink)
+dimText=$(tput dim)
+
+#==============================================================================
+# Elements
+#==============================================================================
+
+# CHECK BOXES
+checkBoxGood="[${greenText}✓${resetText}]"       # Good
+checkBoxBad="[${redText}✗${resetText}]"          # Bad
+checkBoxQuestion="[${magentaText}?${resetText}]"  # Question / ?
+checkBoxInfo="[${cyanText}i${resetText}]"      # Info / i
+checkBoxOutput="[${yellowText}!${resetText}]"      # Output / !
+
+# STATUS
+StatusOk="${checkBoxGood} System is healthy."
+StatusUpdate="${checkBoxInfo} Updates are available."
+StatusHot="${checkBoxBad} System is hot!"
+StatusUnknown="${checkBoxQuestion} Status unknown!"
+
+# Current Date & Time
+PDATE(){
+	printf "[$(date '+%Y-%m-%d %H:%M:%S')]"
+}
+
+# Log Types
+INFO=$checkBoxInfo
+OUTPUT=$checkBoxOutput
+SUCCESS=$checkBoxGood
+ERROR=$checkBoxBad
+
+# Log Actions
+CHECK="[CHECK]"
+START="[START]"
+RUN="[ RUN ]"
+EMPT="[     ]"
+OUT="[ OUT ]"
+VAR="[ VAR ]"
+#==============================================================================
+# Logger
+#==============================================================================
+
+function Display_Help(){
+  if [ $DEBUG = "true" ]; then
+    echo "Help" | Debug i s
+  fi
+  echo -e "
+Usage: $scriptname [options]
+
+Options:
+$help_options
+"
+}
+
+function FERROR(){
+  printf "FATAL ERROR: $1\n"
+  Display_Help
+  exit 0
+}
+
+function Debug(){
+  if [ "$1" != "" ] && [ "$2" != "" ]; then
+    case "$1" in
+      info|i)
+        TYPE=$INFO
+        ;;
+      success|s)
+        TYPE=$SUCCESS
+        ;;
+      error|e)
+        TYPE=$ERROR
+        ;;
+      output|o)
+        TYPE=$OUTPUT
+        ;;
+      question|q)
+        TYPE=$checkBoxQuestion
+        ;;
+    esac
+    case "$2" in
+      check|c|test|t)
+        ACTION=$CHECK
+        ;;
+      start|s)
+        ACTION=$START
+        ;;
+      run|r)
+        ACTION=$RUN
+        ;;
+      empty|e)
+        ACTION=$EMPT
+        ;;
+      output|o)
+        ACTION=$OUT
+        ;;
+      variable|var|v)
+        ACTION=$VAR
+        ;;
+    esac
+    while read DCMD; do
+      LogFile=$LgFile
+      if [ "$3" != "" ]; then
+        LogFile=$3
+      fi
+      if [ $DEBUG = "true" ]; then
+        printf "${TYPE}$(PDATE)${ACTION} ${DCMD}\n" | tee -a $LogFile
+      else
+        printf "${TYPE}$(PDATE)${ACTION} ${DCMD}\n"
+      fi
+    done
+  else
+    FERROR "Missing Argument(s)"
+  fi
+}
+
+function Executing(){
+  if [ "$1" != "" ]; then
+    if [ $DEBUG = "true" ]; then
+      echo "Executing $1" | Debug i s
+      if eval $1 2>&1 | Debug o o;then
+        echo "$1" | Debug s r
+      else
+        echo "$1" | Debug e r
+      fi
+    else
+      eval $1
+    fi
+  else
+    FERROR "Missing Argument(s)"
+  fi
+}
+
+function Check_Package(){
+  if [ "$1" != "" ]; then
+    if [ $DEBUG = "true" ]; then
+      echo "Check_Package $1" | Debug i s
+    fi
+    if [ $(dpkg-query -W -f='${Status}' $1 2>/dev/null | grep -c "ok installed") -eq 0 ]; then
+      Executing "sudo apt-get update"
+      Executing "sudo apt-get install $1 -y"
+    fi
+  else
+    FERROR "Missing Argument(s)"
+  fi
+}
+
+function Start(){
+	FILE=$(yad --fixed --borders=15 --width=400 --class="GSu" --title="Select DEB file:" --text="Select DEB file:" --file-selection --file-filter \*.deb 2>/dev/null)
+	Executing "pkexec bash -c 'dpkg -i $FILE;apt --fix-broken install -y'"
+}
+
+function Install(){
+    if [ "$0" = "./${scriptname}" ];then
+			Check_Package dpkg
+			Check_Package zenity
+			Check_Package yad
+			Check_Package sudo
+			Check_Package polkit-kde-1
+			SOURCE=$(pwd)
+      Executing "pkexec bash -c 'mkdir -p $INSTDIR;cp -R ${SOURCE}/. $INSTDIR;ln -s ${INSTDIR}${scriptname} $INSTBIN'"
+    else
+      FERROR "Unable to track source directory"
+    fi
+}
+
+function Remove(){
+    if [ "$0" = "./${scriptname}" ] || [ "$0" = "/usr/bin/${scriptname}" ];then
+        if [ -d $INSTDIR ] && [ -f $INSTBIN ];then
+					Executing "pkexec bash -c 'rm -rf $INSTDIR;sudo rm -f $INSTBIN'"
+        else
+            FERROR "Script is not installed"
+        fi
+    else
+        FERROR "Unable to track source directory"
+    fi
+}
+
+#==============================================================================
+# RUN OPTIONS & FUNCTIONS
+#==============================================================================
+
+#Execute Help if no parameters have been provided
+#if [ $# -eq 0 ]; then Display_Help; fi
+
+if [ "$0" != "./${scriptname}" ] && [ "$0" != "/usr/bin/${scriptname}" ];then
+    FERROR "Script must be run from source folder or as binary."
+fi
+
+RDP_Options=
+
+while getopts ":vir" option
+	do
+	case "${option}"
+		in
+      i)
+          Install
+					RUNNING='FALSE'
+          ;;
+      r)
+          Remove
+					RUNNING='FALSE'
+          ;;
+			v)
+				DEBUG=true
+				;;
+			\? )
+				echo "Invalid option: $OPTARG" 1>&2
+                Display_Help
+                exit 0
+				;;
+			: )
+				echo "Invalid option: $OPTARG requires an argument" 1>&2
+                Display_Help
+                exit 0
+				;;
+	esac
+done
+shift $((OPTIND -1))
+
+#==============================================================================
+# RUN SCRIPT
+#==============================================================================
+
+if [ "$RUNNING" = "" ]; then
+	Start
+fi
+
+exit 0
