@@ -17,7 +17,7 @@ Usage: dpkg-gui [options]
 Options:
 
 -v                     => Enable Debug Mode
-                          Input commands sent are stored in /home/louis/log/dpkg-gui/
+                          Input commands sent are stored in log/dpkg-gui/
 -i                     => Install Script as Binary
 -r                     => Remove Binary
 ```
